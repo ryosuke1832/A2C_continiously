@@ -1,0 +1,12 @@
+# TensorFlowの大きなファイルを無視
+a2c/Lib/site-packages/tensorflow/python/_pywrap_tensorflow_internal.dll
+a2c/Lib/site-packages/tensorflow/python/_pywrap_tensorflow_internal.lib
+a2c/Lib/site-packages/tensorflow/python/_pywrap_tensorflow_internal.pyd
+
+# または、より広範囲でTensorFlowのバイナリファイルを除外する場合
+a2c/Lib/site-packages/tensorflow/**/*.dll
+a2c/Lib/site-packages/tensorflow/**/*.lib
+a2c/Lib/site-packages/tensorflow/**/*.pyd
+
+# さらに広範囲で、すべてのPythonライブラリを除外する場合
+a2c/Lib/
