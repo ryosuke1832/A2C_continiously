@@ -13,5 +13,7 @@ a2c/Lib/
 venv/
 .idea/
 .venv/
+old_calc_data/
+
 
 

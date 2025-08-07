@@ -76,7 +76,8 @@ class RealDataEEGNetClassifier:
         possible_files = [
             'unity_a2c_final_results.csv',
             'RL_data.csv',
-            'unity_a2c_progress_game*.csv'
+            'unity_a2c_progress_game*.csv',
+            'grasp_a2c_*.csv'
         ]
         
         found_files = []
@@ -495,19 +496,19 @@ class RealDataEEGNetClassifier:
         fig, axes = plt.subplots(1, 2, figsize=(12, 5))
         
         # 損失
-        axes[0].plot(self.history.history['loss'], label='訓練損失')
-        axes[0].plot(self.history.history['val_loss'], label='検証損失')
-        axes[0].set_title('モデル損失（実データベース）')
-        axes[0].set_xlabel('エポック')
-        axes[0].set_ylabel('損失')
+        axes[0].plot(self.history.history['loss'], label='training loss')
+        axes[0].plot(self.history.history['val_loss'], label='validation loss')
+        axes[0].set_title('loss model actual database')
+        axes[0].set_xlabel('epoch')
+        axes[0].set_ylabel('loss')
         axes[0].legend()
         
         # 精度
-        axes[1].plot(self.history.history['accuracy'], label='訓練精度')
-        axes[1].plot(self.history.history['val_accuracy'], label='検証精度')
-        axes[1].set_title('モデル精度（実データベース）')
-        axes[1].set_xlabel('エポック')
-        axes[1].set_ylabel('精度')
+        axes[1].plot(self.history.history['accuracy'], label='training accuracy')
+        axes[1].plot(self.history.history['val_accuracy'], label='validation accuracy')
+        axes[1].set_title('accuracy model actual database')
+        axes[1].set_xlabel('epoch')
+        axes[1].set_ylabel('accuracy')
         axes[1].legend()
         
         plt.tight_layout()
@@ -521,9 +522,9 @@ class RealDataEEGNetClassifier:
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                    xticklabels=self.class_names,
                    yticklabels=self.class_names)
-        plt.title('混同行列 - 実Unity-A2Cデータベース')
-        plt.xlabel('予測クラス')
-        plt.ylabel('実際のクラス')
+        plt.title('混同行列 - 実Unity-a2c database')
+        plt.xlabel('estimated class')
+        plt.ylabel('actual class')
         plt.tight_layout()
         plt.savefig('real_data_confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.show()
@@ -568,6 +569,7 @@ def check_available_data():
         'RL_data.csv', 
         'unity_a2c_progress_game*.csv',
         'unity_*.csv'
+        'grasp_a2c_*.csv' 
     ]
     
     found_files = []
@@ -723,10 +725,10 @@ def create_data_visualization_dashboard(df, labels, forces):
         mask = labels == label
         plt.scatter(forces[mask], df['final_reward'][mask], 
                    c=label_colors[label], label=label, alpha=0.6, s=20)
-    
-    plt.xlabel('把持力 (N)')
-    plt.ylabel('最終報酬')
-    plt.title('把持力 vs 報酬（分類別）')
+
+    plt.xlabel('grasp force (N)')
+    plt.ylabel('final reward')
+    plt.title('grasp force vs final reward (by class)')
     plt.legend()
     plt.grid(True)
     
@@ -738,9 +740,9 @@ def create_data_visualization_dashboard(df, labels, forces):
         plt.scatter(episodes, forces[mask], c=label_colors[label], 
                    label=label, alpha=0.6, s=15)
     
-    plt.xlabel('エピソード')
-    plt.ylabel('把持力 (N)')
-    plt.title('学習進行と把持力（分類別）')
+    plt.xlabel('episode')
+    plt.ylabel('grasp force (N)')
+    plt.title('learning progress vs grasp force (by class)')
     plt.legend()
     plt.grid(True)
     
@@ -749,7 +751,7 @@ def create_data_visualization_dashboard(df, labels, forces):
     label_counts = Counter(labels)
     plt.pie(label_counts.values(), labels=label_counts.keys(), autopct='%1.1f%%',
            colors=[label_colors[label] for label in label_counts.keys()])
-    plt.title('分類分布')
+    plt.title('classification distribution')
     
     # 4. 把持力分布（クラス別ヒストグラム）
     ax4 = plt.subplot(3, 3, 4)
@@ -757,10 +759,10 @@ def create_data_visualization_dashboard(df, labels, forces):
         mask = labels == label
         plt.hist(forces[mask], bins=15, alpha=0.6, label=label, 
                 color=label_colors[label], edgecolor='black')
-    
-    plt.xlabel('把持力 (N)')
-    plt.ylabel('頻度')
-    plt.title('把持力分布（クラス別）')
+
+    plt.xlabel('grasp force (N)')
+    plt.ylabel('frequency')
+    plt.title('grasp force distribution (by class)')
     plt.legend()
     
     # 5. 報酬分布（クラス別ヒストグラム）
@@ -770,9 +772,9 @@ def create_data_visualization_dashboard(df, labels, forces):
         plt.hist(df['final_reward'][mask], bins=15, alpha=0.6, label=label,
                 color=label_colors[label], edgecolor='black')
     
-    plt.xlabel('最終報酬')
-    plt.ylabel('頻度')
-    plt.title('報酬分布（クラス別）')
+    plt.xlabel('final reward')
+    plt.ylabel('frequency')
+    plt.title('final reward distribution (by class)')
     plt.legend()
     
     # 6. 学習曲線（報酬）
@@ -780,18 +782,18 @@ def create_data_visualization_dashboard(df, labels, forces):
     window = 10
     reward_ma = df['final_reward'].rolling(window=window).mean()
     plt.plot(df['game'], reward_ma, linewidth=2)
-    plt.xlabel('エピソード')
-    plt.ylabel('報酬（移動平均）')
-    plt.title(f'学習曲線（{window}エピソード移動平均）')
+    plt.xlabel('episode')
+    plt.ylabel('reward (moving average)')
+    plt.title(f'learning curve (moving average over {window} episodes)')
     plt.grid(True)
     
     # 7. Actor/Critic損失
     ax7 = plt.subplot(3, 3, 7)
-    plt.plot(df['game'], df['actor_cost'].rolling(window=10).mean(), label='Actor損失', alpha=0.8)
-    plt.plot(df['game'], df['critic_cost'].rolling(window=10).mean(), label='Critic損失', alpha=0.8)
-    plt.xlabel('エピソード')
-    plt.ylabel('損失')
-    plt.title('Actor/Critic損失')
+    plt.plot(df['game'], df['actor_cost'].rolling(window=10).mean(), label='Actor loss', alpha=0.8)
+    plt.plot(df['game'], df['critic_cost'].rolling(window=10).mean(), label='Critic loss', alpha=0.8)
+    plt.xlabel('episode')
+    plt.ylabel('loss')
+    plt.title('Actor/Critic loss')
     plt.legend()
     plt.grid(True)
     
@@ -802,9 +804,9 @@ def create_data_visualization_dashboard(df, labels, forces):
         plt.scatter(df['steps'][mask], df['final_reward'][mask],
                    c=label_colors[label], label=label, alpha=0.6, s=15)
     
-    plt.xlabel('ステップ数')
-    plt.ylabel('最終報酬')
-    plt.title('ステップ効率性')
+    plt.xlabel('step')
+    plt.ylabel('final reward')
+    plt.title('step efficiency vs final reward')
     plt.legend()
     plt.grid(True)
     
@@ -814,13 +816,13 @@ def create_data_visualization_dashboard(df, labels, forces):
     plt.plot(df['game'], force_ma, linewidth=2, color='blue')
     
     # 閾値線を表示
-    plt.axhline(y=2.0, color='red', linestyle='--', alpha=0.7, label='Under-grip閾値')
-    plt.axhline(y=15.0, color='green', linestyle='--', alpha=0.7, label='Success上限')
-    plt.axhline(y=20.0, color='orange', linestyle='--', alpha=0.7, label='Over-grip閾値')
-    
-    plt.xlabel('エピソード')
-    plt.ylabel('把持力 (N)')
-    plt.title('把持力の学習変化')
+    plt.axhline(y=2.0, color='red', linestyle='--', alpha=0.7, label='Under-grip threshold')
+    plt.axhline(y=15.0, color='green', linestyle='--', alpha=0.7, label='Success over threshold')
+    plt.axhline(y=20.0, color='orange', linestyle='--', alpha=0.7, label='Over-grip threshold')
+
+    plt.xlabel('episode')
+    plt.ylabel('grasp force (N)')
+    plt.title('change of grasp force during training')
     plt.legend()
     plt.grid(True)
     
