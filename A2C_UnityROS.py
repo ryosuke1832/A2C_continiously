@@ -34,7 +34,7 @@ class GraspForceA2CAgent:
         
         # 制御パラメータ
         self.force_range = (0.0, 25.0)  # 制御する力の範囲
-        self.safe_force_range = (2.0, 15.0)  # 安全な力の範囲
+        self.safe_force_range = (10.0, 15.0)  # 安全な力の範囲
         
         print("🤖 把持力制御A2Cエージェント初期化完了（TensorFlow 2.x）")
     

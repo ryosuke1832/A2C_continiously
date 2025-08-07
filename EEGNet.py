@@ -77,7 +77,8 @@ class RealDataEEGNetClassifier:
             'unity_a2c_final_results.csv',
             'RL_data.csv',
             'unity_a2c_progress_game*.csv',
-            'grasp_a2c_*.csv'
+            'grasp_a2c_*.csv',
+            'grasp_a2c_final_results*.csv'
         ]
         
         found_files = []
