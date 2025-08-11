@@ -53,10 +53,10 @@ class RealDataEEGNetClassifier:
         
         # データ読み込み設定
         self.force_thresholds = {
-            'under_grip_max': 2.0,    # 2N未満 = Under-grip
-            'success_min': 2.0,       # 2N～15N = Success  
+            'under_grip_max': 9.9,    # 2N未満 = Under-grip
+            'success_min': 10.0,       # 2N～15N = Success  
             'success_max': 15.0,
-            'over_grip_min': 20.0     # 20N以上 = Over-grip
+            'over_grip_min': 15.0     # 20N以上 = Over-grip
         }
     
     def load_unity_a2c_data(self, data_path="./"):

@@ -1,0 +1,2 @@
+game,steps,actor_cost,critic_cost,final_reward,action
+0,10,0.0,0.0,-8.88716330895057,4.542115313980591
