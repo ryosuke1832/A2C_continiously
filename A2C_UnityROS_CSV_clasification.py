@@ -1,5 +1,7 @@
+# refactored_force_boundary_classifier.py
+# 元のForceBoundaryClassifierを分離したTCP通信部分を使ってリファクタリング
+
 import json
-import socket
 import time
 import pandas as pd
 import numpy as np
@@ -10,32 +12,30 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 import warnings
 import os
+from typing import Dict, Any
 
 # Warning抑制設定
 warnings.filterwarnings('ignore', category=UserWarning)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # TensorFlow警告抑制
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # oneDNN警告抑制
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-import threading
 
 # TensorFlow警告をさらに抑制
 tf.get_logger().setLevel('ERROR')
 
+# 分離したTCP通信部分をインポート
+from utility.tcp_communication import UnityTcpServer
+
 class ForceBoundaryClassifier:
     """
-    適切な力加減の境界線を判別するAIシステム
-    アルミ缶を潰さない最適な把持力を学習・分類する
+    適切な力加減の境界線を判別するAIシステム（リファクタリング版）
+    通信部分を分離してビジネスロジックに集中
     """
     
-    def __init__(self, host='127.0.0.1', port=12345):
-        self.host = host
-        self.port = port
-        self.socket = None
-        self.is_connected = False
-        
+    def __init__(self):
         # 分類モデル用パラメータ
         self.scaler = StandardScaler()
         self.rf_classifier = None
@@ -101,9 +101,8 @@ class ForceBoundaryClassifier:
         """
         ニューラルネットワーク分類器を作成（警告解消版）
         """
-        # Keras警告を解消：Input layerを明示的に作成
         model = keras.Sequential([
-            keras.Input(shape=(input_dim,)),  # 推奨される記法
+            keras.Input(shape=(input_dim,)),
             layers.Dense(128, activation='relu'),
             layers.BatchNormalization(),
             layers.Dropout(0.3),
@@ -182,7 +181,7 @@ class ForceBoundaryClassifier:
         把持力のカテゴリを予測
         """
         if self.rf_classifier is None or self.nn_classifier is None:
-            return None, None
+            return None
         
         features_scaled = self.scaler.transform([features])
         
@@ -233,192 +232,6 @@ class ForceBoundaryClassifier:
             'confidence': prediction['rf_confidence']
         }
 
-    def connect_to_unity(self):
-        """
-        Unityシミュレータに接続
-        """
-        try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.bind((self.host, self.port))
-            self.socket.listen(1)
-            print(f"🚀 Force Boundary Classifierサーバー開始")
-            print(f"📡 接続先: {self.host}:{self.port}")
-            print(f"🎯 目標: 最適な把持力境界線の学習・分類")
-            print("=" * 60)
-            
-            client_socket, address = self.socket.accept()
-            print(f"✅ Unity接続: {address}")
-            self.is_connected = True
-            return client_socket
-            
-        except Exception as e:
-            print(f"❌ 接続エラー: {e}")
-            return None
-
-    def process_unity_data(self, client_socket):
-        """
-        Unityからのデータを処理し分類結果を返す（JSON解析エラー対策版）
-        """
-        buffer = ""  # バッファを追加してJSON解析を安定化
-        
-        while self.is_connected:
-            try:
-                raw_data = client_socket.recv(1024).decode('utf-8')
-                if not raw_data:
-                    break
-                
-                buffer += raw_data
-                
-                # 完全なJSONメッセージを探す
-                while True:
-                    try:
-                        # 改行で分割して個別のJSONメッセージを処理
-                        if '\n' in buffer:
-                            json_line, buffer = buffer.split('\n', 1)
-                        else:
-                            json_line = buffer
-                            buffer = ""
-                        
-                        if not json_line.strip():
-                            break
-                            
-                        # JSONパース（エラー対策）
-                        parsed_data = json.loads(json_line.strip())
-                        print(f"📥 受信データ: {parsed_data}")
-                        
-                        if parsed_data['type'] == 'ping':
-                            # Ping応答
-                            response = {
-                                "type": "pong",
-                                "message": "Force Boundary Classifier動作中",
-                                "timestamp": time.time()
-                            }
-                            
-                        elif parsed_data['type'] == 'can_state':
-                            # 缶の状態データを処理
-                            current_force = parsed_data['current_force']
-                            accumulated_force = parsed_data['accumulated_force']
-                            is_crushed = parsed_data['is_crushed']
-                            timestamp = parsed_data['timestamp']
-                            
-                            # 分類ラベル生成
-                            force_category = self.classify_force_level(
-                                current_force, accumulated_force, is_crushed
-                            )
-                            
-                            # 特徴量抽出
-                            features = self.extract_features({
-                                'current_force': current_force,
-                                'accumulated_force': accumulated_force,
-                                'timestamp': timestamp,
-                                'is_crushed': is_crushed,
-                                'force_change_rate': 0.0,  # TODO: 前の状態との比較
-                                'time_since_start': time.time() - self.start_time
-                            })
-                            
-                            # 訓練データとして蓄積
-                            self.training_data.append(features)
-                            self.labels.append(force_category)
-                            
-                            # 予測実行（分類器が訓練済みの場合）
-                            prediction = None
-                            if len(self.training_data) >= 50 and len(self.training_data) % 20 == 0:
-                                # 定期的に再訓練
-                                self.train_classifiers()
-                            
-                            if self.rf_classifier is not None:
-                                prediction = self.predict_force_category(features)
-                            
-                            # 推奨アクション生成
-                            if prediction:
-                                recommendation = self.generate_force_recommendation(
-                                    parsed_data, prediction
-                                )
-                            else:
-                                # 初期段階では安全な範囲内の力を推奨
-                                recommendation = {
-                                    'recommended_force': min(current_force + 1.0, self.safe_force_threshold),
-                                    'action': '学習中',
-                                    'safety_level': 'learning',
-                                    'confidence': 0.0
-                                }
-                            
-                            # 分類結果表示
-                            category_names = list(self.FORCE_CATEGORIES.keys())
-                            current_category = category_names[force_category]
-                            
-                            print(f"🎯 分類結果: {current_category}")
-                            print(f"⚖️  現在力: {current_force:.2f}N")
-                            print(f"💡 推奨アクション: {recommendation['action']}")
-                            print(f"🔧 推奨力: {recommendation['recommended_force']:.2f}N")
-                            
-                            # 応答データ作成
-                            response = {
-                                "type": "classification_result",
-                                "force_category": current_category,
-                                "category_id": force_category,
-                                "recommended_force": recommendation['recommended_force'],
-                                "action": recommendation['action'],
-                                "confidence": recommendation['confidence'],
-                                "current_step": self.current_step,
-                                "episode": self.current_episode,
-                                "timestamp": time.time()
-                            }
-                            
-                            # データをCSVに保存
-                            self.save_session_data({
-                                'episode': self.current_episode,
-                                'step': self.current_step,
-                                'current_force': current_force,
-                                'accumulated_force': accumulated_force,
-                                'is_crushed': is_crushed,
-                                'predicted_category': current_category,
-                                'recommended_force': recommendation['recommended_force'],
-                                'confidence': recommendation['confidence'],
-                                'timestamp': timestamp
-                            })
-                            
-                            self.current_step += 1
-                        
-                        elif parsed_data['type'] == 'episode_end':
-                            print(f"🏁 エピソード {self.current_episode} 終了")
-                            response = {
-                                "type": "episode_ack",
-                                "total_episodes": self.current_episode + 1,
-                                "training_samples": len(self.training_data),
-                                "timestamp": time.time()
-                            }
-                            self.current_episode += 1
-                            self.current_step = 0
-                        
-                        elif parsed_data['type'] == 'reset':
-                            print("🔄 シミュレーション リセット")
-                            response = {
-                                "type": "reset_ack",
-                                "message": "Force Boundary Classifier リセット完了",
-                                "timestamp": time.time()
-                            }
-                        
-                        # 応答送信
-                        response_json = json.dumps(response) + '\n'
-                        client_socket.send(response_json.encode('utf-8'))
-                        
-                        if '\n' not in buffer:
-                            break
-                            
-                    except json.JSONDecodeError as e:
-                        print(f"⚠️ JSON解析エラー（スキップ）: {e}")
-                        if '\n' not in buffer:
-                            buffer = ""  # バッファをクリア
-                            break
-                        continue
-                        
-            except Exception as e:
-                print(f"❌ データ処理エラー: {e}")
-                break
-        
-        client_socket.close()
-
     def save_session_data(self, data_row):
         """
         セッションデータをCSVファイルに保存
@@ -433,13 +246,147 @@ class ForceBoundaryClassifier:
             df.to_csv(filename, index=False)
             print(f"💾 分類結果をCSVファイルに保存: {filename}")
 
-    def run(self):
+    def handle_message(self, message_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        メインループ実行
+        メッセージハンドラー（通信部分から分離されたビジネスロジック）
         """
-        client_socket = self.connect_to_unity()
-        if client_socket:
-            self.process_unity_data(client_socket)
+        if message_type == 'ping':
+            # Ping応答
+            return {
+                "type": "pong",
+                "message": "Force Boundary Classifier動作中",
+                "timestamp": time.time()
+            }
+            
+        elif message_type == 'can_state':
+            # 缶の状態データを処理
+            current_force = data['current_force']
+            accumulated_force = data['accumulated_force']
+            is_crushed = data['is_crushed']
+            timestamp = data['timestamp']
+            
+            # 分類ラベル生成
+            force_category = self.classify_force_level(
+                current_force, accumulated_force, is_crushed
+            )
+            
+            # 特徴量抽出
+            features = self.extract_features({
+                'current_force': current_force,
+                'accumulated_force': accumulated_force,
+                'timestamp': timestamp,
+                'is_crushed': is_crushed,
+                'force_change_rate': 0.0,  # TODO: 前の状態との比較
+                'time_since_start': time.time() - self.start_time
+            })
+            
+            # 訓練データとして蓄積
+            self.training_data.append(features)
+            self.labels.append(force_category)
+            
+            # 予測実行（分類器が訓練済みの場合）
+            prediction = None
+            if len(self.training_data) >= 50 and len(self.training_data) % 20 == 0:
+                # 定期的に再訓練
+                self.train_classifiers()
+            
+            if self.rf_classifier is not None:
+                prediction = self.predict_force_category(features)
+            
+            # 推奨アクション生成
+            if prediction:
+                recommendation = self.generate_force_recommendation(data, prediction)
+            else:
+                # 初期段階では安全な範囲内の力を推奨
+                recommendation = {
+                    'recommended_force': min(current_force + 1.0, self.safe_force_threshold),
+                    'action': '学習中',
+                    'safety_level': 'learning',
+                    'confidence': 0.0
+                }
+            
+            # 分類結果表示
+            category_names = list(self.FORCE_CATEGORIES.keys())
+            current_category = category_names[force_category]
+            
+            print(f"🎯 分類結果: {current_category}")
+            print(f"⚖️  現在力: {current_force:.2f}N")
+            print(f"💡 推奨アクション: {recommendation['action']}")
+            print(f"🔧 推奨力: {recommendation['recommended_force']:.2f}N")
+            
+            # データをCSVに保存
+            self.save_session_data({
+                'episode': self.current_episode,
+                'step': self.current_step,
+                'current_force': current_force,
+                'accumulated_force': accumulated_force,
+                'is_crushed': is_crushed,
+                'predicted_category': current_category,
+                'recommended_force': recommendation['recommended_force'],
+                'confidence': recommendation['confidence'],
+                'timestamp': timestamp
+            })
+            
+            self.current_step += 1
+            
+            # 応答データ作成
+            return {
+                "type": "classification_result",
+                "force_category": current_category,
+                "category_id": force_category,
+                "recommended_force": recommendation['recommended_force'],
+                "action": recommendation['action'],
+                "confidence": recommendation['confidence'],
+                "current_step": self.current_step,
+                "episode": self.current_episode,
+                "timestamp": time.time()
+            }
+        
+        elif message_type == 'episode_end':
+            print(f"🏁 エピソード {self.current_episode} 終了")
+            response = {
+                "type": "episode_ack",
+                "total_episodes": self.current_episode + 1,
+                "training_samples": len(self.training_data),
+                "timestamp": time.time()
+            }
+            self.current_episode += 1
+            self.current_step = 0
+            return response
+        
+        elif message_type == 'reset':
+            print("🔄 シミュレーション リセット")
+            return {
+                "type": "reset_complete",
+                "message": "Force Boundary Classifier リセット完了",
+                "timestamp": time.time()
+            }
+        
+        # デフォルト応答
+        return {
+            "type": "ack",
+            "message": f"メッセージ受信: {message_type}",
+            "timestamp": time.time()
+        }
+
+    def run(self, host='127.0.0.1', port=12345):
+        """
+        分離したTCP通信部分を使ってサーバーを開始
+        """
+        print(f"🚀 Force Boundary Classifierサーバー開始")
+        print(f"📡 接続先: {host}:{port}")
+        print(f"🎯 目標: 最適な把持力境界線の学習・分類")
+        print("=" * 60)
+        
+        # 分離したTCP通信サーバーを使用
+        server = UnityTcpServer(host, port)
+        server.set_message_handler(self.handle_message)
+        
+        try:
+            server.run()
+        except KeyboardInterrupt:
+            print("\n⏹️ サーバー停止中...")
+            server.stop()
 
 if __name__ == "__main__":
     classifier = ForceBoundaryClassifier()

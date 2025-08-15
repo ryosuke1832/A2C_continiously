@@ -11,6 +11,8 @@ a2c/Lib/site-packages/tensorflow/**/*.pyd
 # さらに広範囲で、すべてのPythonライブラリを除外する場合
 a2c/Lib/
 venv/
+old_code/
+
 .idea/
 .venv/
 old_calc_data/
